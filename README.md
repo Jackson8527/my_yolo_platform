@@ -103,7 +103,7 @@ my_yolo_platform/
 ```
 ## 📖 使用指南 (Quick Start)
 ```bash
-1.准备数据：
+1. 准备数据：
 进入 "数据标注" 页面，上传原始图片。
 在网页上进行画框标注，保存。
 点击 "导出训练包"，获得 zip 文件。
@@ -117,3 +117,8 @@ my_yolo_platform/
 在模型下拉框中选择 my_v1 (Trained)。
 上传测试图片或视频，查看效果并下载。
 ```
+## 界面展示
+<img width="1275" height="609" alt="Snipaste_2025-11-28_09-51-11" src="https://github.com/user-attachments/assets/c89eac06-e981-4f82-85b6-9642a41794eb" />
+<img width="1275" height="609" alt="Snipaste_2025-11-28_09-51-28" src="https://github.com/user-attachments/assets/712b4862-9688-4a02-b252-15b2e0a75d9e" />
+<img width="1275" height="609" alt="Snipaste_2025-11-28_09-51-47" src="https://github.com/user-attachments/assets/be3d42bc-57df-424a-b393-e18acafb3a3a" />
+
