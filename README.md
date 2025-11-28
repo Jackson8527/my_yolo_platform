@@ -1,6 +1,6 @@
-# 🚀 YOLO Forge - All-in-One Visual AI Platform
+# 🚀 my_yolo_platform - All-in-One Visual AI Platform
 
-**YOLO Forge** 是一个基于 Flask + Ultralytics YOLOv11 构建的轻量级、全流程可视化 AI 训练与推理平台。
+**my_yolo_platform** 是一个基于 Flask + Ultralytics YOLOv11 构建的轻量级、全流程可视化 AI 训练与推理平台。
 
 它整合了从 **数据标注** -> **模型训练** -> **性能监控** -> **推理检测** 的完整闭环，专为深度学习开发者和科研人员设计，无需编写繁琐代码即可轻松管理 YOLO 任务。
 
@@ -52,8 +52,8 @@
 
 ### 1. 克隆项目
 ```bash
-git clone https://github.com/yourusername/yolo-forge.git
-cd yolo-forge
+git clone https://github.com/yourusername/my_yolo_platform.git
+cd my_yolo_platform
 ```
 
 ### 2. 安装依赖
@@ -73,7 +73,7 @@ python app.py
 
 ## 🛠️ 目录结构 (Directory Structure)
 ```bash
-yolo_forge/
+my_yolo_platform/
 ├── app.py                  # 程序入口
 ├── config.py               # 全局配置
 ├── requirements.txt        # 依赖列表
