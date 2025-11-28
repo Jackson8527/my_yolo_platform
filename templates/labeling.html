@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+
+{% block title %}数据标注 - YOLO Forge{% endblock %}
+
+{% block head %}
+<style>
+    /* 布局样式 */
+    .label-container { display: flex; height: calc(100vh - 100px); gap: 20px; }
+    
+    /* 左侧文件列表 */
+    .file-list {
+        width: 200px; background: #161b22; border: 1px solid #30363d;
+        border-radius: 8px; overflow-y: auto; display: flex; flex-direction: column;
+    }
+    .file-item {
+        padding: 10px; cursor: pointer; border-bottom: 1px solid #30363d;
+        font-size: 0.9rem; color: #8b949e;
+    }
+    .file-item:hover { background: #1f6feb; color: white; }
+    .file-item.active { background: #238636; color: white; }
+    .file-item.labeled::after { content: ' ✓'; color: #238636; font-weight: bold; }
+    .file-item.active.labeled::after { color: white; }
+
+    /* 中间画布区 */
+    .canvas-area {
+        flex: 1; background: #0d1117; border: 1px solid #30363d;
+        border-radius: 8px; position: relative; display: flex;
+        align-items: center; justify-content: center; overflow: hidden;
+    }
+    canvas { box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+
+    /* 右侧工具栏 */
+    .tools-panel {
+        width: 250px; background: #161b22; border: 1px solid #30363d;
+        border-radius: 8px; padding: 15px; display: flex; flex-direction: column;
+    }
+    
+    .class-item {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 8px; background: #21262d; margin-bottom: 5px; border-radius: 4px;
+        cursor: pointer; border: 2px solid transparent;
+    }
+    .class-item.selected { border-color: #1f6feb; }
+    .color-box { width: 15px; height: 15px; border-radius: 3px; display: inline-block; margin-right: 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3><i class="bi bi-pencil-square"></i> 数据标注</h3>
+    <div>
+        <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('uploadInput').click()">
+            <i class="bi bi-cloud-upload"></i> 上传图片
+        </button>
+        <input type="file" id="uploadInput" hidden multiple onchange="uploadImages()">
+    </div>
+</div>
+
+<div class="label-container">
+    <!-- 1. 图片列表 -->
+    <div class="file-list" id="fileList">
+        <!-- JS 填充 -->
+    </div>
+
+    <!-- 2. 画布区域 -->
+    <div class="canvas-area" id="canvasContainer">
+        <canvas id="editorCanvas"></canvas>
+    </div>
+
+    <!-- 3. 工具栏 -->
+    <div class="tools-panel">
+        <h6 class="text-muted mb-3">当前类别 (Classes)</h6>
+        <div id="classList" class="mb-3" style="flex:1; overflow-y:auto;">
+            <!-- JS 填充类别 -->
+        </div>
+        
+        <div class="input-group mb-3">
+            <input type="text" class="form-control form-control-sm" id="newClassInput" placeholder="新类别名">
+            <button class="btn btn-outline-primary btn-sm" onclick="addClass()">添加</button>
+        </div>
+
+        <hr class="border-secondary">
+        
+        <div class="d-grid gap-2">
+            <button class="btn btn-danger btn-sm" onclick="undo()">
+                <i class="bi bi-arrow-counterclockwise"></i> 撤销 (Ctrl+Z)
+            </button>
+            <button class="btn btn-success" onclick="saveCurrent()">
+                <i class="bi bi-save"></i> 保存标注 (Ctrl+S)
+            </button>
+            <a href="/api/export_dataset" target="_blank" class="btn btn-warning fw-bold">
+                <i class="bi bi-box-seam"></i> 导出训练包 (Zip)
+            </a>
+            <div class="d-flex justify-content-between mt-2">
+                <button class="btn btn-outline-light btn-sm" onclick="prevImage()">&lt; 上一张</button>
+                <button class="btn btn-outline-light btn-sm" onclick="nextImage()">下一张 &gt;</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // === 1. 状态管理 ===
+    let images = [];
+    let currentImageIndex = -1;
+    let canvas = document.getElementById('editorCanvas');
+    let ctx = canvas.getContext('2d');
+    let imgObj = new Image();
+    
+    // 标注数据
+    let boxes = []; // [{x, y, w, h, classId}, ...] (这里存的是像素坐标，不是归一化)
+    let classes = ['car', 'person']; // 默认类别
+    let currentClassId = 0;
+    
+    // 交互状态
+    let isDrawing = false;
+    let startX, startY;
+    let scale = 1; // 图片缩放比例
+
+    // 颜色库
+    const colors = ['#00ff00', '#ff0000', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+
+    // === 2. 初始化 ===
+    async function init() {
+        await loadImagesList();
+        renderClassList();
+        if(images.length > 0) loadImage(0);
+        
+        // 绑定 Canvas 事件
+        canvas.addEventListener('mousedown', onMouseDown);
+        canvas.addEventListener('mousemove', onMouseMove);
+        canvas.addEventListener('mouseup', onMouseUp);
+        
+        // 键盘快捷键
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveCurrent(); }
+            if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
+            if (e.key === 'Delete') { undo(); }
+        });
+    }
+
+    // === 3. 数据加载 ===
+    async function loadImagesList() {
+        const res = await fetch('/api/get_images');
+        images = await res.json();
+        const listDiv = document.getElementById('fileList');
+        listDiv.innerHTML = '';
+        images.forEach((img, idx) => {
+            const div = document.createElement('div');
+            div.className = `file-item ${img.is_labeled ? 'labeled' : ''}`;
+            div.innerText = img.name;
+            div.onclick = () => loadImage(idx);
+            listDiv.appendChild(div);
+        });
+    }
+
+    function loadImage(index) {
+        if (index < 0 || index >= images.length) return;
+        currentImageIndex = index;
+        
+        // 高亮选中
+        document.querySelectorAll('.file-item').forEach((el, i) => {
+            el.classList.toggle('active', i === index);
+        });
+
+        const imgData = images[index];
+        imgObj.src = imgData.url;
+        imgObj.onload = () => {
+            // 适配 Canvas 大小
+            const container = document.getElementById('canvasContainer');
+            const maxWidth = container.clientWidth - 20;
+            const maxHeight = container.clientHeight - 20;
+            
+            // 计算缩放 (Contain 模式)
+            const scaleX = maxWidth / imgObj.width;
+            const scaleY = maxHeight / imgObj.height;
+            scale = Math.min(scaleX, scaleY, 1); // 不放大，只缩小
+
+            canvas.width = imgObj.width * scale;
+            canvas.height = imgObj.height * scale;
+            
+            boxes = []; // 清空上一张的框
+            // TODO: 如果需要加载已保存的标注，这里需要请求后端 get_label
+            // 目前简化为每次都重新标，或者你可以自行扩展 "load existing labels" 逻辑
+            
+            redraw();
+        };
+    }
+
+    // === 4. 绘图逻辑 ===
+    function redraw() {
+        // 清空
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 画图
+        ctx.drawImage(imgObj, 0, 0, canvas.width, canvas.height);
+        
+        // 画框
+        boxes.forEach(box => drawBox(box));
+        
+        // 画正在拖拽的框
+        if (isDrawing) {
+            drawBox({
+                x: Math.min(startX, currentX),
+                y: Math.min(startY, currentY),
+                w: Math.abs(currentX - startX),
+                h: Math.abs(currentY - startY),
+                classId: currentClassId
+            }, true);
+        }
+    }
+
+    function drawBox(box, isActive=false) {
+        const color = colors[box.classId % colors.length];
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(box.x, box.y, box.w, box.h);
+        
+        // 标签背景
+        ctx.fillStyle = color;
+        const text = classes[box.classId];
+        const textWidth = ctx.measureText(text).width;
+        ctx.fillRect(box.x, box.y - 15, textWidth + 4, 15);
+        
+        // 标签文字
+        ctx.fillStyle = 'black';
+        ctx.font = '12px Arial';
+        ctx.fillText(text, box.x + 2, box.y - 3);
+    }
+
+    // === 5. 鼠标事件 ===
+    let currentX, currentY;
+
+    function onMouseDown(e) {
+        const rect = canvas.getBoundingClientRect();
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
+        isDrawing = true;
+    }
+
+    function onMouseMove(e) {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        currentX = e.clientX - rect.left;
+        currentY = e.clientY - rect.top;
+        redraw();
+    }
+
+    function onMouseUp(e) {
+        if (!isDrawing) return;
+        isDrawing = false;
+        
+        // 保存框 (过滤掉太小的误触)
+        const w = Math.abs(currentX - startX);
+        const h = Math.abs(currentY - startY);
+        
+        if (w > 5 && h > 5) {
+            boxes.push({
+                x: Math.min(startX, currentX),
+                y: Math.min(startY, currentY),
+                w: w,
+                h: h,
+                classId: currentClassId
+            });
+        }
+        redraw();
+    }
+
+    // === 6. 功能函数 ===
+    function undo() {
+        boxes.pop();
+        redraw();
+    }
+    
+    function addClass() {
+        const input = document.getElementById('newClassInput');
+        const name = input.value.trim();
+        if (name && !classes.includes(name)) {
+            classes.push(name);
+            input.value = '';
+            renderClassList();
+            // 自动选中新类别
+            selectClass(classes.length - 1);
+        }
+    }
+
+    function selectClass(index) {
+        currentClassId = index;
+        renderClassList();
+    }
+
+    function renderClassList() {
+        const list = document.getElementById('classList');
+        list.innerHTML = '';
+        classes.forEach((name, idx) => {
+            const div = document.createElement('div');
+            div.className = `class-item ${idx === currentClassId ? 'selected' : ''}`;
+            div.innerHTML = `
+                <div>
+                    <span class="color-box" style="background:${colors[idx % colors.length]}"></span>
+                    ${name}
+                </div>
+            `;
+            div.onclick = () => selectClass(idx);
+            list.appendChild(div);
+        });
+    }
+
+    async function saveCurrent() {
+        if (!imgObj.src) return;
+        
+        // 转换坐标为 YOLO 归一化格式 (Center_X, Center_Y, W, H)
+        // 并且要除以 scale 还原回原图尺寸
+        const yoloBoxes = boxes.map(b => {
+            // 还原到原图像素坐标
+            const realX = b.x / scale;
+            const realY = b.y / scale;
+            const realW = b.w / scale;
+            const realH = b.h / scale;
+            
+            // 转换为中心点归一化坐标
+            const cx = (realX + realW / 2) / imgObj.width;
+            const cy = (realY + realH / 2) / imgObj.height;
+            const nw = realW / imgObj.width;
+            const nh = realH / imgObj.height;
+            
+            return {
+                class_id: b.classId,
+                x: parseFloat(cx.toFixed(6)),
+                y: parseFloat(cy.toFixed(6)),
+                w: parseFloat(nw.toFixed(6)),
+                h: parseFloat(nh.toFixed(6))
+            };
+        });
+
+        const currentImg = images[currentImageIndex];
+        
+        const res = await fetch('/api/save_label', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                filename: currentImg.name,
+                boxes: yoloBoxes,
+                classes: classes
+            })
+        });
+
+        if (res.ok) {
+            // 标记为已标注
+            currentImg.is_labeled = true;
+            document.querySelectorAll('.file-item')[currentImageIndex].classList.add('labeled');
+            // 闪烁提示
+            const btn = document.querySelector('.btn-success');
+            const originText = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check"></i> Saved!';
+            setTimeout(() => btn.innerHTML = originText, 1000);
+        }
+    }
+
+    function nextImage() {
+        if (currentImageIndex < images.length - 1) loadImage(currentImageIndex + 1);
+    }
+    
+    function prevImage() {
+        if (currentImageIndex > 0) loadImage(currentImageIndex - 1);
+    }
+
+    // 上传图片
+    async function uploadImages() {
+        const input = document.getElementById('uploadInput');
+        const files = input.files;
+        if (files.length === 0) return;
+        
+        for (let file of files) {
+            const formData = new FormData();
+            formData.append('file', file);
+            await fetch('/api/upload_raw', { method: 'POST', body: formData });
+        }
+        
+        // 刷新列表
+        loadImagesList();
+    }
+
+    // 启动
+    init();
+
+</script>
+{% endblock %}

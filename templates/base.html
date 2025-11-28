@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}YOLO Forge{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --bg-dark: #0f1115;
+            --sidebar-bg: #161b22;
+            --card-bg: #1c2128;
+            --text-main: #e6edf3;
+            --text-muted: #8b949e;
+            --border-color: #30363d;
+        }
+        body { background-color: var(--bg-dark); color: var(--text-main); height: 100vh; overflow: hidden; }
+        .wrapper { display: flex; width: 100%; height: 100%; }
+        
+        #sidebar {
+            width: 280px; background: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            padding: 20px; display: flex; flex-direction: column;
+        }
+        .brand-title { font-size: 1.5rem; font-weight: bold; margin-bottom: 40px; display: flex; align-items: center; gap: 10px; }
+        .nav-link { color: var(--text-muted); padding: 12px; margin-bottom: 5px; border-radius: 6px; display: flex; align-items: center; gap: 10px; text-decoration: none; transition: 0.2s;}
+        .nav-link:hover { background: rgba(255,255,255,0.05); color: var(--text-main); }
+        .nav-link.active { background: #1f6feb; color: white; }
+        #content { flex: 1; padding: 30px; overflow-y: auto; position: relative;}
+        .dark-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body>
+
+<div class="wrapper">
+    <nav id="sidebar">
+        <div class="brand-title">
+            <i class="bi bi-box-seam text-primary"></i> YOLO训练平台
+        </div>
+
+        <div class="nav flex-column">
+            <a href="/dashboard" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">
+                <i class="bi bi-grid-1x2"></i> 总览 (Dashboard)
+            </a>
+            <a href="/labeling" class="nav-link {% if active_page == 'labeling' %}active{% endif %}">
+                <i class="bi bi-pencil-square"></i> 数据标注 (Labeling)
+            </a>
+            <a href="/train" class="nav-link {% if active_page == 'train' %}active{% endif %}">
+                <i class="bi bi-cpu"></i> 模型训练 (Train)
+            </a>
+            <a href="/" class="nav-link {% if active_page == 'inference' %}active{% endif %}">
+                <i class="bi bi-camera-video"></i> 推理检测 (Inference)
+            </a>
+            <a href="/settings" class="nav-link {% if active_page == 'settings' %}active{% endif %}">
+                <i class="bi bi-gear"></i> 设置 (Settings)
+            </a>
+        </div>
+        
+        <!-- 左下角系统状态 -->
+        <div class="mt-auto">
+            <div class="dark-card p-3" style="background: rgba(0,0,0,0.2); border: 1px solid #30363d;">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <small class="text-white"><i class="bi bi-gpu-card"></i> <span id="gpuName">GPU</span></small>
+                    <small class="text-success" id="gpuTemp">--°C</small>
+                </div>
+                
+                <div class="mb-1 d-flex justify-content-between"><small style="font-size:0.75rem">Util</small> <small id="gpuUtilText" style="font-size:0.75rem">0%</small></div>
+                <div class="progress mb-2" style="height: 4px;">
+                    <div class="progress-bar bg-success" id="gpuUtilBar" style="width: 0%"></div>
+                </div>
+
+                <div class="mb-1 d-flex justify-content-between"><small style="font-size:0.75rem">VRAM</small> <small id="gpuMemText" style="font-size:0.75rem">0%</small></div>
+                <div class="progress" style="height: 4px;">
+                    <div class="progress-bar bg-primary" id="gpuMemBar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div id="content">
+        {% block content %}{% endblock %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // 全局系统监控轮询
+    setInterval(async () => {
+        try {
+            const res = await fetch('/system_status');
+            const data = await res.json();
+            
+            if(data.gpu_name !== "N/A") {
+                document.getElementById('gpuName').innerText = data.gpu_name.replace("NVIDIA ", "").replace("GeForce ", "");
+                document.getElementById('gpuTemp').innerText = data.gpu_temp + "°C";
+                document.getElementById('gpuUtilText').innerText = data.gpu_util + "%";
+                document.getElementById('gpuUtilBar').style.width = data.gpu_util + "%";
+                document.getElementById('gpuMemText').innerText = data.gpu_mem + "%";
+                document.getElementById('gpuMemBar').style.width = data.gpu_mem + "%";
+            }
+        } catch(e) {}
+    }, 3000);
+</script>
+{% block scripts %}{% endblock %}
+
+</body>
+</html>

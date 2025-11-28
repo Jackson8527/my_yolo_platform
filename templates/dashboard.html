@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}总览 - YOLO Forge{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .stat-card {
+        background: linear-gradient(145deg, #1c2128, #161b22);
+        border: 1px solid #30363d; border-radius: 12px; padding: 20px;
+        transition: transform 0.2s;
+    }
+    .stat-card:hover { transform: translateY(-5px); border-color: #1f6feb; }
+    .stat-icon { font-size: 2rem; opacity: 0.8; }
+    .stat-value { font-size: 2rem; font-weight: bold; color: #e6edf3; }
+    .stat-label { color: #8b949e; font-size: 0.9rem; text-transform: uppercase; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">系统总览 (Dashboard)</h3>
+
+<!-- 1. 顶部统计卡片 -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-value" id="gpuUtil">0%</div>
+                    <div class="stat-label">GPU Load</div>
+                </div>
+                <i class="bi bi-gpu-card stat-icon text-success"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-value" id="modelCount">0</div>
+                    <div class="stat-label">Models</div>
+                </div>
+                <i class="bi bi-box-seam stat-icon text-primary"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-value" id="bestMap">0%</div>
+                    <div class="stat-label">Best mAP</div>
+                </div>
+                <i class="bi bi-graph-up-arrow stat-icon text-warning"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-value" id="diskUsage">0 MB</div>
+                    <div class="stat-label">Disk Usage</div>
+                </div>
+                <i class="bi bi-hdd stat-icon text-info"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. 图表区域 -->
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="dark-card h-100">
+            <h5 class="mb-4">实时资源监控</h5>
+            <div style="height: 300px;">
+                <canvas id="resourceChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="dark-card h-100">
+            <h5 class="mb-4">存储分布</h5>
+            <div style="height: 300px; display:flex; justify-content:center;">
+                <canvas id="storageChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 初始化图表
+    const ctxRes = document.getElementById('resourceChart').getContext('2d');
+    const resChart = new Chart(ctxRes, {
+        type: 'line',
+        data: {
+            labels: Array(20).fill(''),
+            datasets: [
+                { label: 'GPU Util (%)', data: Array(20).fill(0), borderColor: '#238636', tension: 0.4, pointRadius: 0 },
+                { label: 'VRAM (%)', data: Array(20).fill(0), borderColor: '#1f6feb', tension: 0.4, pointRadius: 0 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            scales: { y: { min: 0, max: 100, grid: { color: '#333' } }, x: { display: false } },
+            plugins: { legend: { labels: { color: '#aaa' } } }
+        }
+    });
+
+    const ctxStor = document.getElementById('storageChart').getContext('2d');
+    const storChart = new Chart(ctxStor, {
+        type: 'doughnut',
+        data: {
+            labels: ['Datasets', 'Models', 'Cache'],
+            datasets: [{
+                data: [1, 1, 1],
+                backgroundColor: ['#e3b341', '#1f6feb', '#6e7681'],
+                borderWidth: 0
+            }]
+        },
+        options: { plugins: { legend: { position: 'bottom', labels: { color: '#aaa' } } } }
+    });
+
+    // 轮询数据
+    setInterval(async () => {
+        try {
+            const res = await fetch('/api/dashboard_stats');
+            const data = await res.json();
+
+            // 更新卡片
+            document.getElementById('gpuUtil').innerText = data.gpu_util + "%";
+            document.getElementById('modelCount').innerText = data.model_count;
+            document.getElementById('bestMap').innerText = data.best_map + "%";
+            document.getElementById('diskUsage').innerText = data.disk_usage + " MB";
+
+            // 更新折线图
+            const gpu = data.gpu_util;
+            const mem = data.gpu_mem;
+            
+            resChart.data.datasets[0].data.push(gpu);
+            resChart.data.datasets[0].data.shift();
+            resChart.data.datasets[1].data.push(mem);
+            resChart.data.datasets[1].data.shift();
+            resChart.update();
+
+            // 更新圆环图 (简单模拟比例，实际可用文件夹大小)
+            storChart.data.datasets[0].data = [data.dataset_count * 10, data.total_runs * 50, data.disk_usage];
+            storChart.update();
+
+        } catch(e) {}
+    }, 2000);
+</script>
+{% endblock %}

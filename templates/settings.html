@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}设置 - YOLO Forge{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">系统设置 (Settings)</h3>
+
+<div class="row g-4">
+    <!-- 1. 存储管理 -->
+    <div class="col-md-6">
+        <div class="dark-card h-100">
+            <h5 class="mb-3"><i class="bi bi-hdd-fill"></i> 存储与清理</h5>
+            <p class="text-muted small">清理推理过程中产生的临时图片、视频和上传的缓存文件。</p>
+            
+            <div class="d-flex align-items-center justify-content-between p-3 border border-secondary rounded mb-3">
+                <div>
+                    <h6 class="mb-0">临时缓存</h6>
+                    <small class="text-muted">uploads/, results/</small>
+                </div>
+                <button class="btn btn-outline-warning" onclick="clearCache()">
+                    <i class="bi bi-trash"></i> 立即清理
+                </button>
+            </div>
+            
+            <div class="alert alert-secondary mb-0 small">
+                <i class="bi bi-info-circle"></i> 定期清理有助于释放服务器空间，不会删除已训练的模型。
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. 关于信息 -->
+    <div class="col-md-6">
+        <div class="dark-card h-100">
+            <h5 class="mb-3"><i class="bi bi-info-circle-fill"></i> 关于系统</h5>
+            <ul class="list-group list-group-flush bg-transparent">
+                <li class="list-group-item bg-transparent text-light border-secondary d-flex justify-content-between">
+                    <span>YOLO Version</span>
+                    <span class="fw-bold">v11.0.0</span>
+                </li>
+                <li class="list-group-item bg-transparent text-light border-secondary d-flex justify-content-between">
+                    <span>Platform</span>
+                    <span>Flask + PyTorch</span>
+                </li>
+                <li class="list-group-item bg-transparent text-light border-secondary d-flex justify-content-between">
+                    <span>GPU Driver</span>
+                    <span id="gpuDriver">Detecting...</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 3. 模型与任务管理 (危险区) -->
+    <div class="col-12">
+        <div class="dark-card border-danger">
+            <h5 class="text-danger mb-4"><i class="bi bi-exclamation-triangle-fill"></i> 任务管理 (Runs Management)</h5>
+            
+            <div class="table-responsive">
+                <table class="table table-dark table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>任务名</th>
+                            <th>Epochs</th>
+                            <th>mAP@50</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for run in runs %}
+                        <tr id="row-{{ run.name }}">
+                            <td class="fw-bold">{{ run.name }}</td>
+                            <td>{{ run.epochs }}</td>
+                            <td class="text-success">{{ run.last_map }}%</td>
+                            <td>
+                                {% if run.status == 'Completed' %}
+                                    <span class="badge bg-success">完成</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ run.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button class="btn btn-danger btn-sm" onclick="deleteRun('{{ run.name }}')">
+                                    <i class="bi bi-trash"></i> 删除
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if not runs %}
+                <p class="text-center text-muted my-3">暂无训练记录</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function clearCache() {
+        if(!confirm("确定要清理所有临时缓存文件吗？")) return;
+        const res = await fetch('/api/clear_cache', { method: 'POST' });
+        const data = await res.json();
+        alert(`清理完成！共删除了 ${data.count} 个文件。`);
+    }
+
+    async function deleteRun(name) {
+        if(!confirm(`⚠️ 警告：确定要永久删除任务 "${name}" 吗？\n删除后模型文件无法恢复！`)) return;
+        
+        const res = await fetch('/api/delete_run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: name })
+        });
+        
+        if (res.ok) {
+            document.getElementById('row-' + name).remove();
+        } else {
+            alert("删除失败");
+        }
+    }
+    
+    // 获取一点额外信息
+    fetch('/system_status').then(r=>r.json()).then(d=>{
+        if(d.gpu_name) document.getElementById('gpuDriver').innerText = d.gpu_name;
+    });
+</script>
+{% endblock %}

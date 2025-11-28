@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}推理检测 - YOLO Forge{% endblock %}
+
+{% block head %}
+<style>
+    .preview-box {
+        background: #0d1117; border-radius: 8px; border: 2px dashed #30363d;
+        min-height: 500px; display: flex; align-items: center; justify-content: center;
+        overflow: hidden; position: relative;
+    }
+    .preview-box img, .preview-box video { max-width: 100%; max-height: 600px; }
+    .result-item { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+    
+    /* 侧边栏控制区样式 */
+    .control-panel {
+        background: #161b22; border-bottom: 1px solid #30363d; padding: 15px; margin-bottom: 20px; border-radius: 8px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- 左侧：显示区域 -->
+    <div class="col-lg-8">
+        <div class="dark-card p-0 overflow-hidden h-100">
+            <div class="preview-box">
+                {% if result %}
+                    {% if is_video %}
+                        <video controls autoplay muted loop><source src="{{ url_for('static', filename=result) }}" type="video/mp4"></video>
+                    {% else %}
+                        <img src="{{ url_for('static', filename=result) }}" alt="Result">
+                    {% endif %}
+                {% else %}
+                    <div class="text-muted text-center">
+                        <i class="bi bi-image display-1"></i>
+                        <p class="mt-3">预览区域</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：控制与结果 -->
+    <div class="col-lg-4">
+        <!-- 1. 控制面板 (表单) -->
+        <div class="dark-card mb-3">
+            <h5 class="mb-3"><i class="bi bi-sliders"></i> 检测配置</h5>
+            <form action="/upload" method="post" enctype="multipart/form-data" id="inferenceForm">
+                
+                <!-- 模型选择 -->
+                <div class="mb-3">
+                    <label class="form-label text-muted">选择模型</label>
+                    <select class="form-select bg-dark text-light border-secondary" name="model_path">
+                        <optgroup label="预训练模型 (Pretrained)">
+                            {% for m in models if m.type == 'Pretrained' %}
+                            <option value="{{ m.path }}" {% if current_model == m.path %}selected{% endif %}>{{ m.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="我的训练模型 (Trained)">
+                            {% for m in models if m.type == 'Trained' %}
+                            <option value="{{ m.path }}" {% if current_model == m.path %}selected{% endif %}>{{ m.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                    </select>
+                </div>
+
+                <!-- 置信度滑块 -->
+                <div class="mb-3">
+                    <label class="form-label text-white d-flex justify-content-between">
+                        <span>置信度 (Conf)</span>
+                        <span id="confValue">0.75</span>
+                    </label>
+                    <input type="range" class="form-range" name="conf" min="0.1" max="0.9" step="0.01" value="0.75" oninput="document.getElementById('confValue').innerText = this.value">
+                </div>
+
+                <!-- 文件上传 -->
+                <div class="mb-3">
+                    <label class="form-label text-muted">上传文件</label>
+                    <input class="form-control bg-dark text-light border-secondary" type="file" name="file" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-magic"></i> 开始推理
+                </button>
+            </form>
+        </div>
+
+        <!-- 2. 结果与下载 -->
+        {% if result %}
+        <div class="dark-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">检测结果</h5>
+                <!-- 下载按钮 -->
+                <a href="{{ url_for('static', filename=result) }}" download class="btn btn-success btn-sm">
+                    <i class="bi bi-download"></i> 下载结果
+                </a>
+            </div>
+
+            <div class="result-list-container" style="max-height: 300px; overflow-y: auto;">
+                {% if detections %}
+                    {% for det in detections %}
+                    <div class="result-item d-flex justify-content-between align-items-center">
+                        <span class="text-white">{{ det.class }}</span>
+                        <span class="text-info fw-bold">{{ det.conf }}%</span>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted text-center">未检测到目标</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

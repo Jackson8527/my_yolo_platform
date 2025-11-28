@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+
+{% block title %}模型训练 - YOLO Forge{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    .terminal-window {
+        background-color: #000; border-radius: 8px; border: 1px solid #333;
+        height: 250px; padding: 15px; font-family: 'Consolas', monospace; 
+        font-size: 0.85rem; color: #00ff00; overflow-y: auto; white-space: pre-wrap;
+    }
+    .form-label { font-size: 0.9rem; margin-bottom: 5px; color: #8b949e; }
+    .form-control, .form-select { background-color: #0d1117; border: 1px solid #30363d; color: #e6edf3; }
+    .form-control:focus { background-color: #0d1117; border-color: #1f6feb; color: white; box-shadow: none; }
+    
+    /* 进度卡片 */
+    .progress-card {
+        background: linear-gradient(145deg, #161b22, #0d1117);
+        border: 1px solid #30363d; border-radius: 12px; padding: 20px;
+        margin-top: 20px; display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    .metric-box {
+        background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px 5px;
+        text-align: center; border: 1px solid #30363d;
+    }
+    .metric-value { font-size: 1.1rem; font-weight: bold; margin-bottom: 2px; }
+    .metric-label { font-size: 0.75rem; color: #8b949e; text-transform: uppercase; }
+
+    /* 图片预览区 */
+    .val-image-box {
+        width: 100%; height: 250px;
+        background: #000; border: 1px solid #333; border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        overflow: hidden; margin-top: 15px;
+    }
+    .val-image-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h3 class="mb-4">模型训练配置</h3>
+
+<div class="row">
+    <!-- 左侧：参数 -->
+    <div class="col-lg-5">
+        <div class="dark-card">
+            <h5 class="mb-4"><i class="bi bi-sliders"></i> 参数设置</h5>
+            <form id="trainForm">
+                <!-- 0. 恢复训练开关 -->
+                <div class="form-check form-switch mb-3 p-3 border rounded border-secondary" style="background: rgba(255,255,255,0.05)">
+                    <input class="form-check-input" type="checkbox" name="resume" value="True" id="checkResume" onchange="toggleResume()">
+                    <label class="form-check-label fw-bold text-warning" for="checkResume">
+                        <i class="bi bi-arrow-repeat"></i> 恢复训练 (Resume Training)
+                    </label>
+                    <div class="form-text text-light small">
+                        勾选此项将尝试寻找下方 "任务名称" 对应的 last.pt 继续训练，忽略数据集和其他参数。
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">任务名称 (必填)</label>
+                    <input type="text" class="form-control" name="project_name" value="my_train_v1" placeholder="例如: car_detect_v1" required>
+                </div>
+
+                <!-- 可被 Resume 禁用的区域 -->
+                <fieldset id="newTrainConfig">
+                    <div class="mb-3">
+                        <label class="form-label">数据集 (Zip)</label>
+                        <input class="form-control" type="file" name="dataset" id="inputFile" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">基础模型</label>
+                        <select class="form-select" name="model_name">
+                            <option value="yolo11n.pt">YOLO11 Nano</option>
+                            <option value="yolo11s.pt">YOLO11 Small</option>
+                            <option value="yolo11m.pt">YOLO11 Medium</option>
+                            <option value="yolo11l.pt" selected>YOLO11 Large</option>
+                        </select>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6">
+                            <label class="form-label">Epochs</label>
+                            <input type="number" class="form-control" name="epochs" id="inputEpochs" value="100">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Batch Size</label>
+                            <input type="number" class="form-control" name="batch" value="16">
+                        </div>
+                    </div>
+
+                    <!-- 高级 & 增强参数 -->
+                    <div class="mb-3 mt-3">
+                        <a class="text-decoration-none small text-primary" data-bs-toggle="collapse" href="#advOptions">
+                            <i class="bi bi-gear-fill"></i> 高级参数 & 数据增强
+                        </a>
+                    </div>
+                    <div class="collapse border-top border-secondary pt-3" id="advOptions">
+                        <h6 class="text-muted mb-3 small text-uppercase">Data Augmentation</h6>
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <label class="form-label small">Mosaic (马赛克)</label>
+                                <input type="number" class="form-control form-control-sm" name="mosaic" value="1.0" step="0.1" max="1.0">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small">Mixup (混合)</label>
+                                <input type="number" class="form-control form-control-sm" name="mixup" value="0.0" step="0.1" max="1.0">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small">Degrees (旋转)</label>
+                                <input type="number" class="form-control form-control-sm" name="degrees" value="0.0" step="1.0" placeholder="0-180">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small">Flip L-R (左右翻转)</label>
+                                <input type="number" class="form-control form-control-sm" name="fliplr" value="0.5" step="0.1" max="1.0">
+                            </div>
+                        </div>
+
+                        <h6 class="text-muted mt-3 mb-3 small text-uppercase">System</h6>
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <label class="form-label small">Device</label>
+                                <input type="text" class="form-control form-control-sm" name="device" value="0" placeholder="0 or cpu">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small">Optimizer</label>
+                                <select class="form-select form-select-sm" name="optimizer">
+                                    <option value="auto">Auto</option>
+                                    <option value="SGD">SGD</option>
+                                    <option value="AdamW">AdamW</option>
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="cos_lr" value="True">
+                                    <label class="form-check-label text-muted small">Cosine LR Scheduler</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- 按钮 -->
+                <div class="d-grid gap-2 mt-4">
+                    <button type="submit" id="btnStart" class="btn btn-success py-2 fw-bold">
+                        <i class="bi bi-rocket-takeoff"></i> 开始训练
+                    </button>
+                    <button type="button" id="btnStop" class="btn btn-danger py-2 fw-bold" style="display: none;" onclick="stopTraining()">
+                        <i class="bi bi-stop-circle"></i> 强制终止
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 右侧：图表、图片、日志 -->
+    <div class="col-lg-7">
+        <div class="dark-card h-100 d-flex flex-column">
+            
+            <!-- 顶部：图表和图片预览并排 (或者上下排，这里上下排更清晰) -->
+            <div class="row g-3">
+                <div class="col-md-7">
+                    <h6 class="text-muted small"><i class="bi bi-graph-up"></i> Metrics</h6>
+                    <div style="height: 250px; position: relative;">
+                        <canvas id="trainingChart"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-5">
+                    <h6 class="text-muted small"><i class="bi bi-eye"></i> Validation Preview</h6>
+                    <div class="val-image-box" id="valImageBox">
+                        <span class="text-muted small">等待生成...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 进度卡片 (移动到右侧也可以，或者保持左侧，这里放回左侧下方) -->
+            <!-- 这里为了布局平衡，把进度卡片放在日志上方 -->
+            <div class="progress-card mt-3" id="progressCard" style="display:none">
+                <div class="d-flex justify-content-between align-items-end mb-2">
+                    <small class="text-muted" id="epochText">Epoch 0/100</small>
+                    <span class="text-warning h4 mb-0" id="progressPercent">0%</span>
+                </div>
+                <div class="progress bg-dark mb-3" style="height: 8px;">
+                    <div class="progress-bar bg-warning" id="trainProgressBar" style="width: 0%"></div>
+                </div>
+                <div class="row g-2">
+                    <div class="col-4"><div class="metric-box"><div class="metric-label">Box Loss</div><div class="metric-value text-white" id="valBoxLoss">--</div></div></div>
+                    <div class="col-4"><div class="metric-box"><div class="metric-label">mAP@50</div><div class="metric-value text-success" id="valMap">--</div></div></div>
+                    <div class="col-4"><div class="metric-box"><div class="metric-label">GPU Mem</div><div class="metric-value text-primary" id="valGpu">--</div></div></div>
+                </div>
+            </div>
+
+            <!-- 底部：日志 -->
+            <div class="d-flex justify-content-between mb-2 mt-3 align-items-center">
+                <h6 class="mb-0"><i class="bi bi-terminal"></i> Logs</h6>
+                <span class="badge bg-secondary" id="statusBadge">Idle</span>
+            </div>
+            <div class="terminal-window flex-grow-1" id="terminal">等待任务开始...</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const form = document.getElementById('trainForm');
+    const terminal = document.getElementById('terminal');
+    const statusBadge = document.getElementById('statusBadge');
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+    const progressCard = document.getElementById('progressCard');
+    const valImageBox = document.getElementById('valImageBox');
+
+    let pollInterval = null;
+    let chartInstance = null;
+    let currentProjectName = ""; 
+    let totalEpochs = 100;
+    
+    // Resume 切换逻辑
+    function toggleResume() {
+        const isResume = document.getElementById('checkResume').checked;
+        const configField = document.getElementById('newTrainConfig');
+        const inputFile = document.getElementById('inputFile');
+        
+        if (isResume) {
+            configField.disabled = true;
+            configField.style.opacity = '0.5';
+            inputFile.required = false; // 恢复训练不需要传文件
+            btnStart.innerHTML = '<i class="bi bi-arrow-repeat"></i> 恢复训练';
+        } else {
+            configField.disabled = false;
+            configField.style.opacity = '1';
+            inputFile.required = true;
+            btnStart.innerHTML = '<i class="bi bi-rocket-takeoff"></i> 开始训练';
+        }
+    }
+
+    // Chart 初始化 (保持不变)
+    function initChart() {
+        const ctx = document.getElementById('trainingChart').getContext('2d');
+        if (chartInstance) chartInstance.destroy();
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [
+                { label: 'Box Loss', data: [], borderColor: '#fd7e14', backgroundColor:'rgba(253,126,20,0.1)', yAxisID: 'y', tension: 0.3, pointRadius:0, borderWidth:2 },
+                { label: 'mAP@50', data: [], borderColor: '#20c997', backgroundColor:'rgba(32,201,151,0.1)', yAxisID: 'y1', tension: 0.3, pointRadius:0, borderWidth:2 }
+            ]},
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { display: false }, grid: { color: '#333' } },
+                    y: { type: 'linear', display: true, position: 'left', ticks: { color: '#fd7e14' }, grid: { color: '#333' } },
+                    y1: { type: 'linear', display: true, position: 'right', min: 0, max: 1, ticks: { color: '#20c997' }, grid: { drawOnChartArea: false } }
+                }
+            }
+        });
+    }
+
+    function updateChart(data) {
+        if(!chartInstance) return;
+        chartInstance.data.labels = data.epoch;
+        chartInstance.data.datasets[0].data = data.box_loss;
+        chartInstance.data.datasets[1].data = data.map50;
+        chartInstance.update();
+    }
+
+    // 提交逻辑
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(form);
+        currentProjectName = formData.get('project_name');
+        if (!document.getElementById('checkResume').checked) {
+            totalEpochs = parseInt(formData.get('epochs')) || 100;
+        }
+
+        btnStart.style.display = 'none';
+        btnStop.style.display = 'block';
+        statusBadge.className = 'badge bg-warning';
+        statusBadge.innerText = 'Starting...';
+        progressCard.style.display = 'block';
+        
+        // 重置 UI
+        valImageBox.innerHTML = '<span class="text-muted small">等待生成...</span>';
+        initChart();
+
+        try {
+            const res = await fetch('/start_training', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (res.ok) {
+                statusBadge.className = 'badge bg-primary';
+                statusBadge.innerText = 'Running';
+                startPolling();
+            } else { throw new Error(data.message); }
+        } catch (err) {
+            alert("Error: " + err.message);
+            resetUI();
+        }
+    };
+
+    // 停止逻辑
+    async function stopTraining() {
+        if(!confirm("强制停止?")) return;
+        await fetch('/stop_training', { method: 'POST' });
+    }
+
+    // 轮询逻辑
+    function startPolling() {
+        if (pollInterval) clearInterval(pollInterval);
+        
+        pollInterval = setInterval(async () => {
+            // 1. Logs
+            try {
+                const rLog = await fetch('/get_logs');
+                const dLog = await rLog.json();
+                terminal.innerText = dLog.logs;
+                terminal.scrollTop = terminal.scrollHeight;
+                if (!dLog.is_training) {
+                    clearInterval(pollInterval);
+                    finishTraining(dLog.logs);
+                }
+            } catch(e){}
+
+            if (currentProjectName) {
+                // 2. Metrics & Chart
+                try {
+                    const rMet = await fetch(`/get_metrics?project_name=${currentProjectName}`);
+                    const dMet = await rMet.json();
+                    if (dMet.status === 'success') updateChart(dMet.data);
+                } catch(e){}
+
+                // 3. Progress
+                try {
+                    const rProg = await fetch(`/get_progress?project_name=${currentProjectName}`);
+                    const dProg = await rProg.json();
+                    if (dProg.epoch !== undefined) {
+                        const cur = dProg.epoch + 1;
+                        const pct = Math.min(100, Math.round((cur/totalEpochs)*100));
+                        document.getElementById('trainProgressBar').style.width = pct+"%";
+                        document.getElementById('progressPercent').innerText = pct+"%";
+                        document.getElementById('epochText').innerText = `Epoch ${cur}/${totalEpochs}`;
+                        document.getElementById('valBoxLoss').innerText = dProg.box_loss;
+                        document.getElementById('valMap').innerText = dProg.map50;
+                    }
+                } catch(e){}
+                
+                // 4. Validation Image (每5秒刷一次就行，不用太快)
+                if (Math.random() < 0.2) { // 简单降频
+                     const imgUrl = `/get_val_image?project_name=${currentProjectName}&t=${new Date().getTime()}`;
+                     // 预加载检查是否存在，避免控制台 404 刷屏
+                     const img = new Image();
+                     img.onload = () => { valImageBox.innerHTML = `<img src="${imgUrl}">`; };
+                     img.src = imgUrl;
+                }
+            }
+        }, 2000);
+    }
+
+    function finishTraining(logs) {
+        statusBadge.innerText = logs.includes("✅") ? 'Success' : 'Stopped';
+        statusBadge.className = logs.includes("✅") ? 'badge bg-success' : 'badge bg-danger';
+        resetUI();
+    }
+
+    function resetUI() {
+        btnStart.style.display = 'block';
+        btnStop.style.display = 'none';
+    }
+</script>
+{% endblock %}
